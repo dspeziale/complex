@@ -1,0 +1,323 @@
+{
+  "databases": {
+    "oracle_iam": {
+      "type": "oracle",
+      "host": "10.22.112.70",
+      "port": 1551,
+      "service_name": "iam.griffon.local",
+      "auth_type": "windows",
+      "username": "X1090405",
+      "password": "JSDhey38!?de"
+    },
+    "oracle_dwh": {
+      "type": "oracle",
+      "host": "10.50.41.9",
+      "port": 1521,
+      "service_name": "dwniam",
+      "auth_type": "windows",
+      "username": "X1090405",
+      "password": "JSDhey38!?de"
+    },
+    "mssql_sviluppo_dest": {
+      "type": "mssql",
+      "server": "GRFWWW010VEN01.griffon.local",
+      "port": 1433,
+      "database": "SVILUPPO",
+      "auth_type": "windows",
+      "driver": "ODBC Driver 17 for SQL Server",
+      "default_schema": "Test"
+    },
+    "mssql_report": {
+      "type": "mssql",
+      "server": "GRFWWW010VEN01.griffon.local",
+      "port": 1433,
+      "database": "REPORT_ULTIMA_SISTEMI",
+      "auth_type": "windows",
+      "driver": "ODBC Driver 17 for SQL Server"
+    }
+  },
+  "queries": [
+    {
+      "name": "Login Standard DWH",
+      "source_database": "oracle_dwh",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "DWH-IA-STD.sql",
+      "destination_table": "IA_STD",
+      "destination_schema": "DWH",
+      "enabled": false
+    },
+    {
+      "name": "Login NON Standard DWH",
+      "source_database": "oracle_dwh",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "DWH-IA-NONSTD.sql",
+      "destination_table": "IA_NOSTD",
+      "destination_schema": "DWH",
+      "enabled": false
+    },
+    {
+      "name": "Login Standard SO",
+      "source_database": "oracle_dwh",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "DWH-SO-STD.sql",
+      "destination_table": "SO_STD",
+      "destination_schema": "DWH",
+      "enabled": false
+    },
+    {
+      "name": "Login NON Standard SO",
+      "source_database": "oracle_dwh",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "DWH-SO-NOSTD.sql",
+      "destination_table": "SO_NOSTD",
+      "destination_schema": "DWH",
+      "enabled": false
+    },
+    {
+      "name": "Login Standard DB",
+      "source_database": "oracle_dwh",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "DWH-DB-STD.sql",
+      "destination_table": "DB_STD",
+      "destination_schema": "DWH",
+      "enabled": false
+    },
+    {
+      "name": "Login NON Standard DB",
+      "source_database": "oracle_dwh",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "DWH-DB-NOSTD.sql",
+      "destination_table": "DB_NOSTD",
+      "destination_schema": "DWH",
+      "enabled": false
+    },
+    {
+      "name": "Perimetro IA",
+      "source_database": "mssql_report",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "IAM-PM-IA.sql",
+      "destination_table": "IA_Perimetro",
+      "destination_schema": "IAM",
+      "enabled": false
+    },
+    {
+      "name": "Perimetro DB",
+      "source_database": "mssql_report",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "IAM-PM-DB.sql",
+      "destination_table": "DB_Perimetro",
+      "destination_schema": "IAM",
+      "enabled": false
+    },
+    {
+      "name": "Perimetro SO",
+      "source_database": "mssql_report",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "IAM-PM-SO.sql",
+      "destination_table": "SO_Perimetro",
+      "destination_schema": "IAM",
+      "enabled": false
+    },
+    {
+      "name": "TABELLE IAM DA ORACLE",
+      "source_database": "oracle_iam",
+      "destination_database": "mssql_sviluppo_dest",
+      "sql_file": "IAM-ORACLE-01.sql",
+      "destination_table": "test",
+      "destination_schema": "IAM",
+      "enabled": true
+    }
+  ],
+  "excel_reports": [
+    {
+      "name": "IA_STD",
+      "description": "Report Login Standard Interfaccia Applicativa DWH vs IAM",
+      "enabled": true,
+      "properties": {
+        "title": "Report IA_STD - Analisi Login Standard Interfaccia Applicativa",
+        "subject": "Confronto sistemi DWH e IAM per login IA",
+        "author": "Daniele Speziale",
+        "company": "TIM SPA - SEC.CS.CDO",
+        "category": "Report Operativo",
+        "keywords": "IA, login standard, DWH, IAM, interfaccia applicativa, sistemi",
+        "comments": "Report automatico che confronta i sistemi intercettati dal DWH per login standard di interfaccia applicativa con quelli presenti su IAM. Include analisi di presenza/assenza su entrambe le piattaforme.",
+        "manager": "Cinzia Pontoni"
+      },
+      "sheets": [
+        {
+          "name": "DWH",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-IA_STD_DWH.sql",
+          "description": "SISTEMI INTERCETTATI DAL DWH PER LOGIN STANDARD DI INTERFACCIA APPLICATIVA PRESENTI O MENO SU IAM"
+        },
+        {
+          "name": "IAM",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-IA_STD_IAM.sql",
+          "description": "SISTEMI INTERCETTATI DA IAM PRESENTI O MENO SU DWH PER LOGIN STANDARD DI INTERFACCIA APPLICATIVA"
+        }
+      ]
+    },
+    {
+      "name": "IA_NOSTD",
+      "description": "Report Login Standard Interfaccia Applicativa DWH vs IAM",
+      "enabled": true,
+      "properties": {
+        "title": "Report IA_NOSTD - Analisi Login Standard Interfaccia Applicativa",
+        "subject": "Confronto sistemi DWH e IAM per login IA",
+        "author": "Daniele Speziale",
+        "company": "TIM SPA - SEC.CS.CDO",
+        "category": "Report Operativo",
+        "keywords": "IA, login standard, DWH, IAM, interfaccia applicativa, sistemi",
+        "comments": "Report automatico che confronta i sistemi intercettati dal DWH per login standard di interfaccia applicativa con quelli presenti su IAM. Include analisi di presenza/assenza su entrambe le piattaforme.",
+        "manager": "Cinzia Pontoni"
+      },
+      "sheets": [
+        {
+          "name": "DWH",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-IA_NOSTD_DWH.sql",
+          "description": "SISTEMI INTERCETTATI DAL DWH PER LOGIN NON STANDARD DI INTERFACCIA APPLICATIVA PRESENTI O MENO SU IAM"
+        },
+        {
+          "name": "IAM",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-IA_NOSTD_IAM.sql",
+          "description": "SISTEMI INTERCETTATI DA IAM PRESENTI O MENO SU DWH PER LOGIN NON STANDARD DI INTERFACCIA APPLICATIVA"
+        }
+      ]
+    },
+    {
+      "name": "DB_STD",
+      "description": "Report Login Standard Interfaccia Applicativa DWH vs IAM",
+      "enabled": true,
+      "properties": {
+        "title": "Report IA_STD - Analisi Login Standard Interfaccia Applicativa",
+        "subject": "Confronto sistemi DWH e IAM per login IA",
+        "author": "Daniele Speziale",
+        "company": "TIM SPA - SEC.CS.CDO",
+        "category": "Report Operativo",
+        "keywords": "IA, login standard, DWH, IAM, interfaccia applicativa, sistemi",
+        "comments": "Report automatico che confronta i sistemi intercettati dal DWH per login standard di interfaccia applicativa con quelli presenti su IAM. Include analisi di presenza/assenza su entrambe le piattaforme.",
+        "manager": "Cinzia Pontoni"
+      },
+      "sheets": [
+        {
+          "name": "DWH",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-DB_STD_DWH.sql",
+          "description": "SISTEMI INTERCETTATI DAL DWH PER LOGIN STANDARD DI INTERFACCIA APPLICATIVA PRESENTI O MENO SU IAM"
+        },
+        {
+          "name": "IAM",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-DB_STD_IAM.sql",
+          "description": "SISTEMI INTERCETTATI DA IAM PRESENTI O MENO SU DWH PER LOGIN STANDARD DI INTERFACCIA APPLICATIVA"
+        }
+      ]
+    },
+    {
+      "name": "DB_NOSTD",
+      "description": "Report Login Standard Interfaccia Applicativa DWH vs IAM",
+      "enabled": true,
+      "properties": {
+        "title": "Report IA_STD - Analisi Login Standard Interfaccia Applicativa",
+        "subject": "Confronto sistemi DWH e IAM per login IA",
+        "author": "Daniele Speziale",
+        "company": "TIM SPA - SEC.CS.CDO",
+        "category": "Report Operativo",
+        "keywords": "IA, login standard, DWH, IAM, interfaccia applicativa, sistemi",
+        "comments": "Report automatico che confronta i sistemi intercettati dal DWH per login standard di interfaccia applicativa con quelli presenti su IAM. Include analisi di presenza/assenza su entrambe le piattaforme.",
+        "manager": "Pontoni Cinzia"
+      },
+      "sheets": [
+        {
+          "name": "DWH",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-DB_NOSTD_DWH.sql",
+          "description": "SISTEMI "
+        },
+        {
+          "name": "IAM",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-DB_NOSTD_IAM.sql",
+          "description": "SISTEMI "
+        }
+      ]
+    },
+    {
+      "name": "SO_STD",
+      "description": "Report Login Standard Interfaccia Applicativa DWH vs IAM",
+      "enabled": true,
+      "properties": {
+        "title": "Report IA_STD - Analisi Login Standard Interfaccia Applicativa",
+        "subject": "Confronto sistemi DWH e IAM per login IA",
+        "author": "Daniele Speziale",
+        "company": "TIM SPA - SEC.CS.CDO",
+        "category": "Report Operativo",
+        "keywords": "IA, login standard, DWH, IAM, interfaccia applicativa, sistemi",
+        "comments": "Report automatico che confronta i sistemi intercettati dal DWH per login standard di interfaccia applicativa con quelli presenti su IAM. Include analisi di presenza/assenza su entrambe le piattaforme.",
+        "manager": "Cinzia Pontoni"
+      },
+      "sheets": [
+        {
+          "name": "DWH",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-SO_STD_DWH.sql",
+          "description": "SISTEMI INTERCETTATI DAL DWH PER LOGIN STANDARD DI INTERFACCIA APPLICATIVA PRESENTI O MENO SU IAM"
+        },
+        {
+          "name": "IAM",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-SO_STD_IAM.sql",
+          "description": "SISTEMI INTERCETTATI DA IAM PRESENTI O MENO SU DWH PER LOGIN STANDARD DI INTERFACCIA APPLICATIVA"
+        }
+      ]
+    },
+    {
+      "name": "SO_NOSTD",
+      "description": "Report Login Standard Interfaccia Applicativa DWH vs IAM",
+      "enabled": true,
+      "properties": {
+        "title": "Report IA_STD - Analisi Login Standard Interfaccia Applicativa",
+        "subject": "Confronto sistemi DWH e IAM per login IA",
+        "author": "Daniele Speziale",
+        "company": "TIM SPA - SEC.CS.CDO",
+        "category": "Report Operativo",
+        "keywords": "IA, login standard, DWH, IAM, interfaccia applicativa, sistemi",
+        "comments": "Report automatico che confronta i sistemi intercettati dal DWH per login standard di interfaccia applicativa con quelli presenti su IAM. Include analisi di presenza/assenza su entrambe le piattaforme.",
+        "manager": "Cinzia Pontoni"
+      },
+      "sheets": [
+        {
+          "name": "DWH",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-SO_NOSTD_DWH.sql",
+          "description": "SISTEMI INTERCETTATI DAL DWH PER LOGIN STANDARD DI INTERFACCIA APPLICATIVA PRESENTI O MENO SU IAM"
+        },
+        {
+          "name": "IAM",
+          "database": "mssql_sviluppo_dest",
+          "sql_file": "RPT-SO_NOSTD_IAM.sql",
+          "description": "SISTEMI INTERCETTATI DA IAM PRESENTI O MENO SU DWH PER LOGIN STANDARD DI INTERFACCIA APPLICATIVA"
+        }
+      ]
+    }
+  ],
+  "execution": {
+    "batch_size": 1000,
+    "timeout_seconds": 300,
+    "drop_existing_tables": true,
+    "log_level": "INFO",
+    "log_directory": "logs",
+    "query_directory": "queries",
+    "reports_directory": "reports",
+    "reports_query_directory": "reports/queries",
+    "log_cleanup_days": 3,
+    "enable_auto_cleanup": true,
+    "max_workers": 8,
+    "max_concurrent_queries": 6,
+    "query_timeout_seconds": 300,
+    "enable_multitasking": true
+  }
+}
