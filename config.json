@@ -304,18 +304,19 @@
       ]
     }
   ],
-  "execution": {
-    "batch_size": 1000,
+ "execution": {
+    "batch_size": 50000,
+    "bulk_insert_method": "row_batch_optimized",
     "timeout_seconds": 300,
     "drop_existing_tables": true,
-    "log_level": "INFO",
+    "log_level": "DEBUG",
     "log_directory": "logs",
     "query_directory": "queries",
     "reports_directory": "reports",
     "reports_query_directory": "reports/queries",
     "log_cleanup_days": 3,
     "enable_auto_cleanup": true,
-    "max_workers": 8,
+    "max_workers": 16,
     "max_concurrent_queries": 6,
     "query_timeout_seconds": 300,
     "enable_multitasking": true

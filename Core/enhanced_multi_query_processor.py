@@ -1,11 +1,8 @@
 #
-# ENHANCED_MULTI_QUERY_PROCESSOR.py - MULTITASKING VERSION
+# ENHANCED_MULTI_QUERY_PROCESSOR.py - VERSIONE FINALE CON FIX TYPE CONVERSION
 # Copyright 2025 TIM SPA
 # Author Daniele Speziale
-# Filename enhanced_multi_query_processor.py
-# Created 25/09/25
-# Update  30/09/25
-# Enhanced by: Query Processor con supporto multiriga, template, directory reports e MULTITASKING
+# FIX: Type conversion da Oracle a SQL Server, gestione overflow
 #
 import logging
 import pandas as pd
@@ -19,38 +16,33 @@ from typing import Dict, Any, Tuple, List
 from pathlib import Path
 from Core.database_manager import DatabaseManager
 
-# Sopprime warning pandas
 warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy.*')
 
 
 class MultitaskingQueryProcessor:
-    """Processore multitasking per query multi-database con supporto avanzato per query complesse e reports"""
+    """Processore multitasking - OTTIMIZZATO E ROBUSTO"""
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.db_manager = DatabaseManager(config)
         self.logger = logging.getLogger(__name__)
-        self.batch_size = min(config['execution']['batch_size'], 500)
+        self.batch_size = min(config['execution']['batch_size'], 5000)
         self.drop_existing = config['execution']['drop_existing_tables']
         self.queries = config.get('queries', [])
 
-        # Configurazione multitasking
         self.max_workers = config.get('execution', {}).get('max_workers', 4)
         self.max_concurrent_queries = config.get('execution', {}).get('max_concurrent_queries', 3)
         self.query_timeout = config.get('execution', {}).get('query_timeout_seconds', 300)
 
-        # Thread safety
         self.progress_lock = threading.Lock()
         self.log_lock = threading.Lock()
         self.progress_queue = Queue()
 
-        # Directory per file SQL esterni
         self.query_directory = Path(config.get('execution', {}).get('query_directory', 'queries'))
         self.reports_query_directory = Path(
             config.get('execution', {}).get('reports_query_directory', 'reports/queries'))
         self.reports_directory = Path(config.get('execution', {}).get('reports_directory', 'reports'))
 
-        # Crea tutte le directory necessarie
         self._setup_directories()
 
     def _setup_directories(self):
@@ -89,19 +81,16 @@ class MultitaskingQueryProcessor:
         query_type = query_config.get('query_type', 'standard')
 
         try:
-            # METODO 1: SQL come array di stringhe (multiriga)
             if 'sql' in query_config and isinstance(query_config['sql'], list):
                 sql = ' '.join(line.strip() for line in query_config['sql'])
                 self._thread_safe_log('INFO',
                                       f"QUERY: [{query_name}] ({query_type}) risolto da array multiriga ({len(query_config['sql'])} righe)")
                 return sql
 
-            # METODO 2: SQL inline semplice (stringa)
             elif 'sql' in query_config and isinstance(query_config['sql'], str):
                 self._thread_safe_log('INFO', f"QUERY: [{query_name}] ({query_type}) risolto da stringa inline")
                 return query_config['sql']
 
-            # METODO 3: File SQL esterno
             elif 'sql_file' in query_config:
                 sql_filename = query_config['sql_file']
                 query_dir = self._get_query_directory_for_type(query_config)
@@ -116,7 +105,6 @@ class MultitaskingQueryProcessor:
                 self._thread_safe_log('INFO', f"QUERY: [{query_name}] ({query_type}) risolto da file {sql_file_path}")
                 return sql
 
-            # METODO 4: Template SQL con parametri
             elif 'sql_template' in query_config:
                 template_filename = query_config['sql_template']
                 template_params = query_config.get('template_params', {})
@@ -168,7 +156,6 @@ class MultitaskingQueryProcessor:
         start_time = time.time()
 
         try:
-            # Controlla se query abilitata
             if not query_config.get('enabled', True):
                 self._thread_safe_log('INFO',
                                       f"THREAD-{thread_id}: SKIP Query [{query_name}] ({query_type}) disabilitata")
@@ -180,7 +167,6 @@ class MultitaskingQueryProcessor:
                     'execution_time': 0
                 }
 
-            # Risolve SQL dalla sorgente configurata
             sql_query = self.resolve_sql_query(query_config)
 
             if not sql_query.strip():
@@ -189,7 +175,6 @@ class MultitaskingQueryProcessor:
             self._thread_safe_log('INFO',
                                   f"THREAD-{thread_id}: AVVIO Query {query_name} ({query_type}) da [{source_db}]")
 
-            # Esegue query nel database sorgente
             with self.db_manager.get_connection(source_db) as conn:
                 df = pd.read_sql(sql_query, conn)
 
@@ -209,10 +194,11 @@ class MultitaskingQueryProcessor:
                     'execution_time': time.time() - start_time
                 }
 
-            # Pulisci nomi colonne
             df.columns = [self._clean_column_name(col) for col in df.columns]
 
-            # Scrive risultati nel database destinazione
+            # ✅ FIX: Normalizza i dati prima di scrivere
+            df = self._normalize_dataframe(df, thread_id)
+
             self._write_to_destination(df, dest_db, dest_table, dest_schema, query_name, query_type, thread_id)
 
             full_table_name = f"{dest_schema}.{dest_table}"
@@ -232,7 +218,7 @@ class MultitaskingQueryProcessor:
                 'query_type': query_type,
                 'thread_id': thread_id,
                 'execution_time': execution_time,
-                'dataframe': df  # Per eventuali elaborazioni successive
+                'dataframe': df
             }
 
         except Exception as e:
@@ -246,10 +232,46 @@ class MultitaskingQueryProcessor:
                 'execution_time': execution_time
             }
 
+    def _normalize_dataframe(self, df: pd.DataFrame, thread_id: int) -> pd.DataFrame:
+        """
+        ✅ FIX: Normalizza dati da Oracle per SQL Server
+        - Converti float che dovrebbero essere int
+        - Gestisci overflow (172.0 → 172)
+        - Pulisci valori NULL
+        """
+        self._thread_safe_log('DEBUG',
+                              f"THREAD-{thread_id}: NORMALIZZAZIONE dati (righe: {len(df)}, colonne: {len(df.columns)})")
+
+        for col in df.columns:
+            try:
+                # Se è float ma tutti i valori sono interi → converti a int
+                if pd.api.types.is_float_dtype(df[col]):
+                    # Controlla se sono tutti numeri interi
+                    non_null = df[col].dropna()
+
+                    if len(non_null) > 0 and all(x == int(x) for x in non_null):
+                        # Converti float → int (evita overflow)
+                        df[col] = df[col].apply(lambda x: int(x) if pd.notna(x) else None)
+                        self._thread_safe_log('DEBUG',
+                                              f"THREAD-{thread_id}: Colonna [{col}] convertita FLOAT → BIGINT")
+
+                # Gestisci string vuote → NULL
+                if pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_object_dtype(df[col]):
+                    df[col] = df[col].apply(lambda x: None if (pd.isna(x) or x == '' or str(x).strip() == '') else x)
+
+                # Gestisci valori infiniti
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    df[col] = df[col].replace([float('inf'), float('-inf')], None)
+
+            except Exception as e:
+                self._thread_safe_log('WARNING',
+                                      f"THREAD-{thread_id}: Errore normalizzazione colonna [{col}]: {e}")
+
+        return df
+
     def _write_to_destination(self, df: pd.DataFrame, dest_db: str, dest_table: str,
                               dest_schema: str, query_name: str, query_type: str, thread_id: int):
-        """Scrive DataFrame nel database di destinazione con thread safety"""
-        # Crea schema se non esiste (thread-safe tramite database connection pooling)
+        """Scrive DataFrame nel database di destinazione"""
         self.db_manager.create_schema_if_not_exists(dest_db, dest_schema)
 
         with self.db_manager.get_connection(dest_db) as dest_conn:
@@ -257,27 +279,23 @@ class MultitaskingQueryProcessor:
             cursor = dest_conn.cursor()
 
             try:
-                # Gestione drop/replace se richiesto (thread-safe)
                 if self.drop_existing:
                     try:
                         cursor.execute(
                             f"IF OBJECT_ID('{full_table_name}', 'U') IS NOT NULL DROP TABLE {full_table_name}")
                         dest_conn.commit()
                         self._thread_safe_log('INFO',
-                                              f"THREAD-{thread_id}: DROP Tabella {full_table_name} eliminata in [{dest_db}] per query ({query_type})")
+                                              f"THREAD-{thread_id}: DROP Tabella {full_table_name} eliminata")
                     except Exception as e:
                         self._thread_safe_log('WARNING',
                                               f"THREAD-{thread_id}: WARNING Impossibile eliminare {full_table_name}: {e}")
 
-                # Determina il tipo di database di destinazione
                 dest_config = self.db_manager.get_database_config(dest_db)
 
                 if dest_config.get('type') == 'mssql':
-                    # Per SQL Server, usa implementazione diretta
-                    self._write_to_sqlserver_direct(cursor, dest_conn, df, dest_table, dest_schema, full_table_name,
-                                                    thread_id)
+                    self._write_to_sqlserver_optimized(cursor, dest_conn, df, dest_table, dest_schema,
+                                                       full_table_name, query_name, thread_id)
                 else:
-                    # Per altri database, usa pandas.to_sql
                     df.to_sql(
                         name=dest_table,
                         con=dest_conn,
@@ -289,19 +307,76 @@ class MultitaskingQueryProcessor:
                     )
 
                 self._thread_safe_log('INFO',
-                                      f"THREAD-{thread_id}: CREATE Tabella {full_table_name} creata in [{dest_db}] ({query_type}: {len(df)} righe)")
+                                      f"THREAD-{thread_id}: CREATE Tabella {full_table_name} creata ({len(df)} righe)")
 
             finally:
                 cursor.close()
 
-    def _write_to_sqlserver_direct(self, cursor, conn, df: pd.DataFrame, dest_table: str,
-                                   dest_schema: str, full_table_name: str, thread_id: int):
-        """Scrive DataFrame direttamente in SQL Server con thread safety"""
+    def _infer_column_type_safe(self, series: pd.Series) -> str:
+        """
+        ✅ FIX: Inferenza tipo colonna SICURA per SQL Server
+        Gestisce conversioni da Oracle, overflow, NULL
+        """
+        try:
+            # Filtra NULL per analisi
+            non_null = series.dropna()
+
+            if len(non_null) == 0:
+                # Tutti NULL → string di default
+                return "NVARCHAR(MAX)"
+
+            # Se è numerato (int/float)
+            if pd.api.types.is_numeric_dtype(series):
+                # Controlla range di valori
+                min_val = non_null.min()
+                max_val = non_null.max()
+
+                # ✅ FIX: Usa BIGINT per valori che potrebbero essere float
+                if min_val >= -9223372036854775808 and max_val <= 9223372036854775807:
+                    return "BIGINT"
+                else:
+                    # Overflow → usa FLOAT
+                    return "FLOAT"
+
+            # Se è datetime
+            if pd.api.types.is_datetime64_any_dtype(series):
+                return "DATETIME2"
+
+            # Se è string
+            if pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series):
+                # Calcola lunghezza massima
+                max_len = series.astype(str).str.len().max()
+                max_len = max(min(max_len, 4000), 50)
+                return f"NVARCHAR({max_len})"
+
+            # Default
+            return "NVARCHAR(MAX)"
+
+        except Exception as e:
+            self._thread_safe_log('WARNING', f"Errore inferenza tipo: {e}")
+            return "NVARCHAR(MAX)"
+
+    def _build_create_table_ddl_safe(self, full_table_name: str, df: pd.DataFrame) -> str:
+        """Costruisce DDL SICURA con type inference robusta"""
+        column_definitions = []
+
+        for col in df.columns:
+            col_type = self._infer_column_type_safe(df[col])
+            column_definitions.append(f"[{col}] {col_type}")
+
+        return f"CREATE TABLE {full_table_name} ({', '.join(column_definitions)})"
+
+    def _write_to_sqlserver_optimized(self, cursor, conn, df: pd.DataFrame, dest_table: str,
+                                      dest_schema: str, full_table_name: str,
+                                      query_name: str, thread_id: int):
+        """Inserimento ottimizzato e sicuro su SQL Server"""
         if df.empty:
             self._thread_safe_log('WARNING', f"THREAD-{thread_id}: DataFrame vuoto per {full_table_name}")
             return
 
-        # Pulisci nomi colonne per SQL Server
+        start_time = time.time()
+
+        # Pulisci colonne
         clean_columns = []
         for col in df.columns:
             clean_col = str(col).replace(' ', '_').replace('-', '_').replace('.', '_')
@@ -309,65 +384,54 @@ class MultitaskingQueryProcessor:
             if not clean_col or clean_col[0].isdigit():
                 clean_col = f"col_{clean_col}"
             clean_columns.append(clean_col)
-
         df.columns = clean_columns
 
-        # Crea DDL per la tabella
-        create_sql = f"CREATE TABLE {full_table_name} (\n"
-        column_definitions = []
-
-        for col in df.columns:
-            if pd.api.types.is_integer_dtype(df[col]):
-                col_type = "BIGINT"
-            elif pd.api.types.is_float_dtype(df[col]):
-                col_type = "FLOAT"
-            elif pd.api.types.is_datetime64_any_dtype(df[col]):
-                col_type = "DATETIME2"
-            else:
-                max_len = df[col].astype(str).str.len().max() if not df[col].empty else 50
-                max_len = max(max_len, 50)
-                max_len = min(max_len, 4000)
-                col_type = f"NVARCHAR({max_len})"
-
-            column_definitions.append(f"    [{col}] {col_type}")
-
-        create_sql += ",\n".join(column_definitions) + "\n)"
-
-        # Crea tabella
+        # ✅ FIX: Usa type inference SICURA
+        create_sql = self._build_create_table_ddl_safe(full_table_name, df)
         cursor.execute(create_sql)
         conn.commit()
 
-        # Inserisci dati a batch
-        columns_list = "[" + "], [".join(df.columns) + "]"
+        self._thread_safe_log('DEBUG', f"THREAD-{thread_id}: Tabella creata con DDL sicuro")
+
+        # Prepara dati - ultra-veloce
+        insert_cols = f"({', '.join([f'[{col}]' for col in df.columns])})"
         placeholders = ", ".join(["?" for _ in df.columns])
-        insert_sql = f"INSERT INTO {full_table_name} ({columns_list}) VALUES ({placeholders})"
+        insert_sql = f"INSERT INTO {full_table_name} {insert_cols} VALUES ({placeholders})"
 
-        # Converte DataFrame in lista di tuple
-        data_tuples = []
-        for _, row in df.iterrows():
-            row_data = []
-            for col in df.columns:
-                val = row[col]
-                if pd.isna(val):
-                    row_data.append(None)
-                elif pd.api.types.is_datetime64_any_dtype(df[col]):
-                    row_data.append(val.to_pydatetime() if hasattr(val, 'to_pydatetime') else val)
-                else:
-                    row_data.append(val)
-            data_tuples.append(tuple(row_data))
+        # Conversione rapida da DataFrame a tuple
+        data_tuples = [tuple(row) for row in df.values]
 
-        # Inserimento a batch
-        batch_size = min(self.batch_size, 1000)
-        for i in range(0, len(data_tuples), batch_size):
-            batch = data_tuples[i:i + batch_size]
-            cursor.executemany(insert_sql, batch)
-            conn.commit()
+        # Batch size ottimale
+        optimal_batch = min(self.batch_size, len(data_tuples), 5000)
 
-            if len(data_tuples) > batch_size:
-                self._thread_safe_log('INFO',
-                                      f"THREAD-{thread_id}: PROGRESS {min(i + batch_size, len(data_tuples))}/{len(data_tuples)} righe inserite in {full_table_name}")
+        self._thread_safe_log('INFO',
+                              f"THREAD-{thread_id}: INIZIO inserimento {len(data_tuples)} righe con batch_size={optimal_batch}")
 
-        self._thread_safe_log('INFO', f"THREAD-{thread_id}: OK {len(data_tuples)} righe inserite in {full_table_name}")
+        rows_inserted = 0
+        for i in range(0, len(data_tuples), optimal_batch):
+            batch = data_tuples[i:i + optimal_batch]
+
+            try:
+                cursor.executemany(insert_sql, batch)
+                conn.commit()
+                rows_inserted += len(batch)
+
+                if len(data_tuples) > 10000 and i % (optimal_batch * 10) == 0:
+                    pct = (rows_inserted / len(data_tuples)) * 100
+                    self._thread_safe_log('DEBUG',
+                                          f"THREAD-{thread_id}: {pct:.1f}% ({rows_inserted}/{len(data_tuples)})")
+
+            except Exception as e:
+                conn.rollback()
+                self._thread_safe_log('ERROR',
+                                      f"THREAD-{thread_id}: ERRORE batch [{i}-{i + len(batch)}]: {e}")
+                raise
+
+        elapsed = time.time() - start_time
+        rate = len(data_tuples) / elapsed if elapsed > 0 else 0
+
+        self._thread_safe_log('INFO',
+                              f"THREAD-{thread_id}: ✅ {len(data_tuples)} righe inserite in {elapsed:.2f}s ({rate:.0f} righe/sec)")
 
     def _clean_column_name(self, col_name: str) -> str:
         """Pulisce nomi colonne per compatibilità SQL Server"""
@@ -379,14 +443,12 @@ class MultitaskingQueryProcessor:
         return cleaned
 
     def execute_all_queries_multitasking(self) -> Dict[str, Any]:
-        """Esegue tutte le query configurate in modalità multitasking"""
-        self._thread_safe_log('INFO', f"AVVIO: Pipeline multi-database MULTITASKING (max_workers: {self.max_workers})")
+        """Esegue tutte le query configurate"""
+        self._thread_safe_log('INFO', f"AVVIO: Pipeline OTTIMIZZATA (max_workers: {self.max_workers})")
 
-        # Genera file di esempio se necessario
         if not any(self.query_directory.glob('*.sql')) or not any(self.reports_query_directory.glob('*.sql')):
             self.generate_sample_query_files()
 
-        # Filtra query abilitate
         enabled_queries = [q for q in self.queries if q.get('enabled', True)]
 
         if not enabled_queries:
@@ -414,9 +476,7 @@ class MultitaskingQueryProcessor:
 
         start_time = time.time()
 
-        # Esecuzione multitasking con ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="QueryWorker") as executor:
-            # Sottometti tutte le query enabled
             future_to_query = {
                 executor.submit(self.execute_single_query, query_config, i): query_config
                 for i, query_config in enumerate(enabled_queries)
@@ -425,7 +485,6 @@ class MultitaskingQueryProcessor:
             self._thread_safe_log('INFO',
                                   f"SUBMITTED: {len(future_to_query)} query sottomesse per esecuzione parallela")
 
-            # Processa i risultati man mano che arrivano
             completed_count = 0
             for future in as_completed(future_to_query, timeout=self.query_timeout * len(enabled_queries)):
                 query_config = future_to_query[future]
@@ -438,7 +497,6 @@ class MultitaskingQueryProcessor:
                         query_name = result['query_name']
                         query_type = result.get('query_type', 'standard')
 
-                        # Aggiorna risultati
                         results['executed_queries'][query_name] = {
                             'rows': result['rows'],
                             'source': result['source'],
@@ -457,7 +515,6 @@ class MultitaskingQueryProcessor:
                                 'query_type': query_type
                             })
 
-                        # Aggiorna statistiche
                         if query_type == 'report':
                             results['stats']['report_queries'] += 1
                         else:
@@ -485,62 +542,51 @@ class MultitaskingQueryProcessor:
         results['stats']['total_pipeline_time'] = total_pipeline_time
         results['stats']['concurrent_executions'] = len(enabled_queries)
 
-        # Log finale delle statistiche
         stats = results['stats']
-        self._thread_safe_log('INFO', f"PIPELINE MULTITASKING COMPLETATA: {stats['standard_queries']} query standard, "
+        self._thread_safe_log('INFO', f"✅ PIPELINE COMPLETATA: {stats['standard_queries']} query standard, "
                                       f"{stats['report_queries']} query reports, "
-                                      f"{stats['total_rows_processed']} righe totali processate")
-        self._thread_safe_log('INFO', f"PERFORMANCE: Pipeline totale {total_pipeline_time:.2f}s, "
-                                      f"tempo query cumulativo {stats['total_execution_time']:.2f}s, "
+                                      f"{stats['total_rows_processed']} righe totali")
+        self._thread_safe_log('INFO', f"⚡ PERFORMANCE: {total_pipeline_time:.2f}s pipeline, "
                                       f"speedup: {stats['total_execution_time'] / total_pipeline_time:.1f}x")
 
         return results
 
     def generate_sample_query_files(self):
-        """Genera file SQL di esempio nelle directory appropriate"""
-        # Query standard e report (stesso codice del processor originale)
+        """Genera file SQL di esempio"""
         standard_queries = {
-            "sample_users.sql": """-- Sample User Query\nSELECT user_id, username, email FROM users WHERE created_date >= DATEADD(month, -6, GETDATE());""",
-            "sample_transactions.sql": """-- Sample Transaction Query\nSELECT t.transaction_id, u.username, t.amount FROM transactions t INNER JOIN users u ON t.user_id = u.user_id;"""
+            "sample_users.sql": """-- Sample User Query\nSELECT TOP 1000 * FROM sys.tables;""",
         }
 
         report_queries = {
-            "daily_activity_report.sql": """-- Daily Activity Report\nSELECT CAST(activity_date AS DATE) as report_date, COUNT(DISTINCT user_id) as unique_users FROM user_activities GROUP BY CAST(activity_date AS DATE);""",
-            "performance_report.sql": """-- Performance Report\nSELECT COUNT(*) as total_operations, AVG(processing_time_ms) as avg_time FROM operations WHERE created_date >= DATEADD(week, -1, GETDATE());"""
+            "daily_activity_report.sql": """-- Daily Activity Report\nSELECT TOP 100 * FROM sys.views;""",
         }
 
-        # Crea file
         for filename, content in standard_queries.items():
             file_path = self.query_directory / filename
             if not file_path.exists():
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(content)
-                self._thread_safe_log('INFO', f"SAMPLE: File SQL standard creato: {file_path}")
 
         for filename, content in report_queries.items():
             file_path = self.reports_query_directory / filename
             if not file_path.exists():
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(content)
-                self._thread_safe_log('INFO', f"SAMPLE: File SQL report creato: {file_path}")
 
-    # Alias per compatibilità con il codice esistente
     def execute_all_queries(self) -> Dict[str, Any]:
         """Alias per execute_all_queries_multitasking"""
         return self.execute_all_queries_multitasking()
 
     def get_table_info(self, db_name: str, table_name: str) -> Dict[str, Any]:
-        """Ottiene informazioni dettagliate su una tabella (thread-safe)"""
+        """Ottiene informazioni dettagliate su una tabella"""
         try:
             with self.db_manager.get_connection(db_name) as conn:
                 cursor = conn.cursor()
 
-                # Verifica esistenza e conta righe
                 cursor.execute(f"SELECT COUNT(*) as row_count FROM {table_name}")
                 result = cursor.fetchone()
                 row_count = result[0] if result else 0
 
-                # Ottiene informazioni colonne
                 table_only = table_name.split('.')[-1].strip('[]')
                 cursor.execute(f"""
                     SELECT COLUMN_NAME as name, DATA_TYPE as type

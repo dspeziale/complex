@@ -17,8 +17,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 from Core.database_manager import DatabaseManager
-from Core. enhanced_multi_query_processor import EnhancedMultiQueryProcessor
-
+from Core.enhanced_multi_query_processor import EnhancedMultiQueryProcessor
 
 def cleanup_old_logs(log_directory: str, max_age_days: int = 3):
     """Cancella i file di log più vecchi di max_age_days"""
